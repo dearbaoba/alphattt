@@ -1,7 +1,11 @@
 # -*- coding: UTF-8 -*-
 import time
 import random
+import multiprocessing
 from py_robot.pybot_module import PybotModule
+
+processe_num = 5
+q = multiprocessing.Queue()
 
 
 class Pybot(PybotModule):
@@ -10,6 +14,16 @@ class Pybot(PybotModule):
         super(Pybot, self).__init__(cal_time, board)
         self.tree = {}
 
+    def __multi_run(self, state, legal_moves):
+        # processes = []
+        for i in range(processe_num):
+            process = multiprocessing.Process(target=self.__tree_path,
+                                              args=(state, legal_moves))
+            process.start()
+            # processes.append(process)
+        # for process in processes:
+        #     process.join()
+
     def get_move(self, state):
         paras = {"begin": time.time(), "num": 0, "time": 0}
         legal_moves = self.board.legal_moves(state)
@@ -17,13 +31,19 @@ class Pybot(PybotModule):
             return None
         expect_winner = self.board.next_player(state)
         while True:
-            paras["num"] += 1
-            self.__inc_tree(self.__tree_path(state, legal_moves), expect_winner)
+            self.__multi_run(state, legal_moves)
+            while True:
+                item = None
+                try:
+                    item = q.get(block=False)
+                except Exception:
+                    break
+                paras["num"] += 1
+                self.__inc_tree(item, expect_winner)
             paras["time"] = time.time() - paras["begin"]
             if paras["time"] > self.cal_time:
                 break
         msg_time = "== calculate %d paths using %f seconds ==" % (paras["num"], paras["time"])
-        # print msg_time
         move, msg_pro = self.__search_tree(state, legal_moves)
         return move, msg_time, msg_pro
 
@@ -42,7 +62,8 @@ class Pybot(PybotModule):
         while True:
             winner = self.board.winner(_state)
             if winner is not None:
-                return (move_trace, winner)
+                q.put((move_trace, winner), block=False)
+                break
             _legal_moves = self.board.legal_moves(_state)
             _state = self.board.next_state(_state, self.__choice(_legal_moves, _state))
 
@@ -88,4 +109,4 @@ if __name__ == '__main__':
     pybot = Pybot(1, Board)
     state = {"state": Board.start()}
     client = Client("10.9.88.88", 8011, pybot, state)
-    client.play("pybot", "1234", 3)
+    client.play("pybot", "1234", 2)
