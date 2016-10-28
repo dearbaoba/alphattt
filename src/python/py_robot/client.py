@@ -16,11 +16,13 @@ class Client(object):
         self.port = port
         self.socket_client = self.__init(ip, port)
         self.socket_client.set_recv_callback(self.__make_recv(player, state, self.socket_client))
+        self.end = False
 
     def play(self, username, password, roomID):
         self.__login(self.socket_client, username, password)
         self.__enter_room(self.socket_client, username, roomID)
-        time.sleep(10000)
+        while not self.end:
+            time.sleep(1)
 
     def __init(self, ip, port):
         socket_client = SocketClient(ip, port)
@@ -49,7 +51,8 @@ class Client(object):
                     state["state"] = player.board.next_state(state["state"], msg[1])
                     player.board.display(state["state"])
             elif type(msg) is tuple:
-                pass
+                if type(msg[1]) is tuple and "Wins" in msg[1][1]:
+                    self.end = True
             elif msg.equals(ErlAtom("play")):
                 move, msg_time, msg_pro = player.get_move(state["state"])
                 print "robot move: ", move
