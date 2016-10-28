@@ -4,7 +4,7 @@ import random
 import multiprocessing
 from py_robot.pybot_module import PybotModule
 
-processe_num = 5
+processe_num = 3
 q = multiprocessing.Queue()
 
 
@@ -14,15 +14,26 @@ class Pybot(PybotModule):
         super(Pybot, self).__init__(cal_time, board)
         self.tree = {}
 
-    def __multi_run(self, state, legal_moves):
-        # processes = []
+    def __multi_run(self, state, legal_moves, expect_winner):
+        processes = []
         for i in range(processe_num):
-            process = multiprocessing.Process(target=self.__tree_path,
-                                              args=(state, legal_moves))
+            process = multiprocessing.Process(target=self.__run,
+                                              args=(state, legal_moves, expect_winner))
             process.start()
-            # processes.append(process)
-        # for process in processes:
-        #     process.join()
+            processes.append(process)
+        for process in processes:
+            process.join(1)
+
+    def __run(self, state, legal_moves, expect_winner):
+        paras = {"begin": time.time(), "num": 0, "time": 0}
+        while True:
+            paras["num"] += 1
+            self.__inc_tree(self.__tree_path(state, legal_moves), expect_winner)
+            paras["time"] = time.time() - paras["begin"]
+            if paras["time"] > self.cal_time:
+                break
+        print "== calculate %d paths using %f seconds ==" % (paras["num"], paras["time"])
+        q.put((self.tree, paras["num"]), block=False)
 
     def get_move(self, state):
         paras = {"begin": time.time(), "num": 0, "time": 0}
@@ -30,19 +41,23 @@ class Pybot(PybotModule):
         if len(legal_moves) == 0:
             return None
         expect_winner = self.board.next_player(state)
+        self.__multi_run(state, legal_moves, expect_winner)
         while True:
-            self.__multi_run(state, legal_moves)
-            while True:
-                item = None
-                try:
-                    item = q.get(block=False)
-                except Exception:
-                    break
-                paras["num"] += 1
-                self.__inc_tree(item, expect_winner)
-            paras["time"] = time.time() - paras["begin"]
-            if paras["time"] > self.cal_time:
+            tree = None
+            try:
+                tree = q.get(block=False)
+            except Exception:
                 break
+            paras["num"] += tree[1]
+            for node, value in tree[0].items():
+                try:
+                    item = self.tree[node]
+                    item["win"] += value["win"]
+                    item["total"] += value["total"]
+                    item["per"] = item["win"] / item["total"]
+                except Exception:
+                    self.tree[node] = value
+        paras["time"] = time.time() - paras["begin"]
         msg_time = "== calculate %d paths using %f seconds ==" % (paras["num"], paras["time"])
         move, msg_pro = self.__search_tree(state, legal_moves)
         return move, msg_time, msg_pro
@@ -62,8 +77,7 @@ class Pybot(PybotModule):
         while True:
             winner = self.board.winner(_state)
             if winner is not None:
-                q.put((move_trace, winner), block=False)
-                break
+                return (move_trace, winner)
             _legal_moves = self.board.legal_moves(_state)
             _state = self.board.next_state(_state, self.__choice(_legal_moves, _state))
 
@@ -109,4 +123,4 @@ if __name__ == '__main__':
     pybot = Pybot(1, Board)
     state = {"state": Board.start()}
     client = Client("10.9.88.88", 8011, pybot, state)
-    client.play("pybot", "1234", 2)
+    client.play("ppbot", "1234", 2)
