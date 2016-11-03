@@ -52,7 +52,6 @@ handle_info({notify_observer, RoomID, Msg}, State=#state{rooms=Rooms}) ->
 	{noreply, State};
 
 handle_info({'DOWN', _, process, WebPlayer, Reason}, State=#state{rooms=Rooms}) ->
-	error_logger:format("web player ~p down, reason ~p~n", [WebPlayer, Reason]),
 	NewRooms = delete_suscriber(Rooms, WebPlayer),
 	{noreply, State#state{rooms = NewRooms}}.	
 
@@ -64,20 +63,23 @@ handle_cast({unsuscribe, WebPlayer}, State=#state{rooms=Rooms}) ->
 	{noreply, State#state{rooms =NewRooms}};
 
 handle_cast({observe, RoomID, WebPlayer}, State=#state{rooms=Rooms}) ->
-	case lists:keyfind(RoomID, 1, Rooms) of
-		{RoomID, Moves, Obs} ->
-			[web_player:display(WebPlayer, GameState, Move) || {GameState, Move} <- lists:reverse(Moves)],
-			NewObs = case lists:member(WebPlayer, Obs) of
-								true -> Obs;
-					 			   _ -> [WebPlayer | Obs]
-					 end,
-			NewRooms = lists:keyreplace(RoomID, 1, Rooms, {RoomID, Moves, NewObs}),
-			{noreply, State#state{rooms = NewRooms}};			
-		_ ->
-			room_mgr:observe(RoomID),
-			_Ref = erlang:monitor(process, WebPlayer),
-			{noreply, State#state{rooms = [{RoomID, [], [WebPlayer]} | Rooms]}}
-	end.
+	NewRooms = case lists:keyfind(RoomID, 1, Rooms) of
+					{RoomID, Moves, Obs} ->
+						NewObs = case lists:member(WebPlayer, Obs) of
+									true -> Obs;
+						 			   _ -> 
+						 			   		erlang:monitor(process, WebPlayer),
+											[web_player:display(WebPlayer, GameState, Move) || {GameState, Move} <- lists:reverse(Moves)],
+						 			   		[WebPlayer | Obs]
+								 end,
+						lists:keyreplace(RoomID, 1, Rooms, {RoomID, Moves, NewObs});			
+					_ ->
+						room_mgr:observe(RoomID),
+						erlang:monitor(process, WebPlayer),
+						[{RoomID, [], [WebPlayer]} | Rooms]
+				end,
+	{noreply, State#state{rooms = NewRooms}}.
+
 
 handle_call(get_all_rooms, _From, State=#state{rooms=Rooms}) ->
 	{reply, Rooms, State}.
